@@ -1,8 +1,8 @@
 diff --git a/index.html b/index.html
-index 5a501144d38733212a5fa0b8ea38ace38ec9459b..18b51ffe36c66eb7623203501a4197d3dd260d6e 100644
+index 5a501144d38733212a5fa0b8ea38ace38ec9459b..3b2b731348796b7230040cf78d17450586f0d298 100644
 --- a/index.html
 +++ b/index.html
-@@ -1,7 +1,23 @@
+@@ -1,7 +1,33 @@
  <!DOCTYPE html>
 -<html>
 -  <head><title>My Page</title></head>
@@ -11,12 +11,22 @@ index 5a501144d38733212a5fa0b8ea38ace38ec9459b..18b51ffe36c66eb7623203501a4197d3
 +    <meta charset="UTF-8" />
 +    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 +    <title>Abstract Map Motion</title>
-+    <link rel="stylesheet" href="styles.css" />
++    <link rel="stylesheet" href="./styles.css" />
++    <style>
++      /* Fallback styles so layout still looks correct if the external CSS file fails to load. */
++      body { margin: 0; min-height: 100vh; background: #f2e5cf; overflow: hidden; font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; }
++      .layout { min-height: 100vh; position: relative; }
++      .hero { min-height: 100vh; display: grid; place-items: center; padding: 3rem; }
++      .home-link { position: fixed; left: 1.25rem; top: 50%; transform: translateY(-50%); color: #0b5b61; text-decoration: none; font-weight: 700; z-index: 5; }
++      .screen { width: min(78vw, 980px); aspect-ratio: 16 / 10; border-radius: 22px; overflow: hidden; position: relative; border: 2px solid rgba(239, 138, 74, 0.7); }
++      #map-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
++      .overlay-panel { position: absolute; left: 4%; top: 6%; width: 20%; height: 64%; border-radius: 16px; background: rgba(245, 235, 220, 0.82); }
++    </style>
 +  </head>
    <body>
 -    <h1>Hello world</h1>
 +    <div class="layout">
-+      <a class="home-link" href="#" aria-label="Home">Home</a>
++      <a class="home-link" href="./" aria-label="Home">Home</a>
 +
 +      <main class="hero" aria-label="Interactive abstract map design">
 +        <section class="screen" aria-hidden="true">
@@ -26,6 +36,6 @@ index 5a501144d38733212a5fa0b8ea38ace38ec9459b..18b51ffe36c66eb7623203501a4197d3
 +      </main>
 +    </div>
 +
-+    <script src="app.js"></script>
++    <script src="./app.js"></script>
    </body>
  </html>
