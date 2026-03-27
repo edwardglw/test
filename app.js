@@ -104,28 +104,30 @@ function drawContourBands(time, offsetX, offsetY) {
   }
 }
 
-function drawMapPinches(time, offsetX, offsetY) {
-  const hubs = [
-    { x: 0.73, y: 0.45 },
-    { x: 0.58, y: 0.64 },
-    { x: 0.36, y: 0.56 }
+function drawMapSymbols(time, offsetX, offsetY) {
+  const landmarks = [
+    { x: 0.73, y: 0.45, w: 18, h: 12 },
+    { x: 0.58, y: 0.64, w: 16, h: 11 },
+    { x: 0.36, y: 0.56, w: 14, h: 10 }
   ];
 
-  hubs.forEach((hub, idx) => {
-    const x = width * hub.x + offsetX * (10 + idx * 5);
-    const y = height * hub.y + offsetY * (8 + idx * 4);
-    const pulse = 7 + Math.sin(time * 0.003 + idx * 1.9) * 2;
+  landmarks.forEach((spot, idx) => {
+    const x = width * spot.x + offsetX * (10 + idx * 5);
+    const y = height * spot.y + offsetY * (8 + idx * 4);
+    const jitter = Math.sin(time * 0.002 + idx * 1.7) * 1.2;
 
-    ctx.strokeStyle = "rgba(241, 150, 95, 0.62)";
-    ctx.lineWidth = 1.4;
+    ctx.fillStyle = "rgba(241, 150, 95, 0.34)";
+    ctx.strokeStyle = "rgba(10, 99, 106, 0.66)";
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
-    ctx.arc(x, y, pulse, 0, Math.PI * 2);
+    ctx.rect(x - spot.w / 2, y - spot.h / 2 + jitter, spot.w, spot.h);
+    ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle = "rgba(241, 150, 95, 0.35)";
     ctx.beginPath();
-    ctx.arc(x, y, 2.3, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.moveTo(x - spot.w * 0.8, y + spot.h);
+    ctx.lineTo(x + spot.w * 0.8, y + spot.h);
+    ctx.stroke();
   });
 }
 
@@ -140,7 +142,7 @@ function animate(time) {
   drawContourBands(time, offsetX, offsetY);
   drawDistrictBlocks(offsetX, offsetY);
   drawRoadNetwork(offsetX, offsetY);
-  drawMapPinches(time, offsetX, offsetY);
+  drawMapSymbols(time, offsetX, offsetY);
 
   requestAnimationFrame(animate);
 }
