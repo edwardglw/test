@@ -1,6 +1,11 @@
 const canvas = document.getElementById("map-canvas");
-const ctx = canvas.getContext("2d");
 const screen = document.querySelector(".screen");
+
+if (!canvas || !screen) {
+  throw new Error("Required page elements were not found. Check index.html structure.");
+}
+
+const ctx = canvas.getContext("2d");
 
 let width = 0;
 let height = 0;
