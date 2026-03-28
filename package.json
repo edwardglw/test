@@ -1,0 +1,12 @@
+{
+  "name": "el-w-anima",
+  "version": "1.0.0",
+  "description": "el-w / anima — dynamic visual playground",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}

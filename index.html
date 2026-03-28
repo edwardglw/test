@@ -3,41 +3,59 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ELW Cartography</title>
+    <title>el-w — anima</title>
     <link rel="stylesheet" href="./styles.css" />
-    <style>
-      /* Fallback styles in case external CSS does not load */
-      body { margin: 0; min-height: 100vh; background: #f2e5cf; font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; }
-      .hero { min-height: 100svh; display: grid; place-items: center; padding: 1.25rem; }
-      .screen { width: min(92vw, calc(82vh * 1.6), 1080px); aspect-ratio: 16 / 10; max-height: 82vh; border: 2px solid rgba(239, 138, 74, 0.7); border-radius: 22px; overflow: hidden; position: relative; }
-      #map-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-      .overlay-panel { position: absolute; left: 3%; top: 6%; width: 23%; height: 72%; background: rgba(250, 246, 238, 0.88); border-radius: 16px; }
-      .brand { margin: 0; font-size: 2rem; }
-      .nav-group { display: grid; gap: 0.6rem; }
-      .cartography-link { color: #0b5b61; text-decoration: none; font-weight: 700; border: 0; border-left: 2px solid #ef8a4a; background: transparent; padding: 0.2rem 0.72rem; cursor: pointer; text-align: left; display: inline-flex; align-items: center; gap: 0.45rem; }
-      .refresh-icon { font-size: 0.86rem; opacity: 0.85; }
-    </style>
   </head>
   <body>
-    <main class="hero" aria-label="Interactive abstract map design">
-      <section class="screen" aria-label="Abstract map scene">
-        <canvas id="map-canvas"></canvas>
+    <button class="hamburger" id="hamburger-btn" aria-label="Toggle navigation" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
 
-        <aside class="overlay-panel" aria-label="Navigation panel">
-          <div class="panel-content">
-            <h1 class="brand">el-w</h1>
-            <div class="nav-group" role="group" aria-label="Scene controls">
-              <button class="cartography-link" id="randomize-link" type="button" aria-label="Randomize district map variables">
-                <span>Stochasticity</span><span class="refresh-icon" aria-hidden="true">↻</span>
-              </button>
-              <button class="cartography-link" id="panorama-link" type="button" aria-label="Switch to panorama mode">
-                <span>Panorama</span><span class="refresh-icon" aria-hidden="true">↻</span>
-              </button>
-            </div>
+    <nav class="side-nav" id="side-nav" aria-label="Site navigation">
+      <div class="nav-inner">
+        <div class="brand" aria-label="EL-W">el-w</div>
+        <div class="project-name">anima</div>
+
+        <label class="upload-mini" id="upload-mini" title="Upload a photo to generate a new visual page">
+          <input type="file" id="vision-input" accept="image/*" />
+          <div class="upload-mini-inner">
+            <span class="upload-mini-plus">+</span>
+            <span class="upload-mini-text" id="upload-mini-text">upload image</span>
           </div>
-        </aside>
-      </section>
+        </label>
+
+        <!-- Vision pages appear here, directly below the upload zone -->
+        <ul class="nav-list nav-vision-list" id="nav-vision-list" role="list"></ul>
+
+        <ul class="nav-list" id="nav-list" role="list">
+          <li class="nav-item">
+            <button class="nav-link is-active" data-page="0" aria-current="page">Map</button>
+            <button class="refresh-btn" data-page="0" aria-label="Refresh map">↻</button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-link" data-page="1" aria-current="false">Forms</button>
+            <button class="refresh-btn" data-page="1" aria-label="Refresh forms">↻</button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-link" data-page="2" aria-current="false">Flux</button>
+            <button class="refresh-btn" data-page="2" aria-label="Refresh flux">↻</button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-link" data-page="3" aria-current="false">Strata</button>
+            <button class="refresh-btn" data-page="3" aria-label="Refresh strata">↻</button>
+          </li>
+        </ul>
+
+        <div class="nav-footer">
+          <div class="coord-display" id="coord-display" aria-live="polite"></div>
+        </div>
+      </div>
+    </nav>
+
+    <main class="stage" id="stage" aria-label="Interactive visualisation">
+      <canvas id="canvas"></canvas>
     </main>
+
 
     <script src="./app.js"></script>
   </body>
