@@ -76,20 +76,39 @@ body {
   font-size: clamp(1.8rem, 4vw, 2.6rem);
 }
 
+.nav-group {
+  display: grid;
+  gap: 0.6rem;
+}
+
 .cartography-link {
   color: var(--deep-teal);
   text-decoration: none;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   font-weight: 700;
-  font-size: clamp(0.8rem, 1.1vw, 0.95rem);
+  font-size: clamp(0.78rem, 1.05vw, 0.93rem);
+  border: 0;
   border-left: 2px solid var(--orange);
-  padding: 0.2rem 0.72rem;
-  width: fit-content;
+  background: transparent;
+  padding: 0.28rem 0.72rem;
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.42rem;
+}
+
+.refresh-icon {
+  font-size: 0.9rem;
+  opacity: 0.82;
 }
 
 .cartography-link:hover,
-.cartography-link:focus-visible {
+.cartography-link:focus-visible,
+.cartography-link.is-active {
   color: var(--orange);
   border-color: var(--teal);
 }
