@@ -43,6 +43,18 @@ let fluxLines     = [];     // horizontal speed lines
 // Vision pages (page 4+) — each upload creates a new entry
 let visionPages = [];
 
+// ─── Card system globals ───────────────────────────────────────────────────
+const cardPositions = {};  // "pageIdx:id" → {x, y}  — persists across navigation
+const cardsByPage   = {};  // pageIdx → [cardObj, ...]
+let   cardZTop      = 20;
+let   cardDrag      = null;
+
+// Parse an rgb(r,g,b) CSS string to [r,g,b]
+function parseRgb(str) {
+  const m = str.match(/\d+/g);
+  return m ? [+m[0], +m[1], +m[2]] : [128, 128, 128];
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Seeded LCG random-number generator
 // ─────────────────────────────────────────────────────────────────────────────
@@ -72,6 +84,22 @@ function resize() {
   initForms();
   initFlux();
   initStrata();
+
+  // Reinit vision particle positions (they're in canvas-space px)
+  for (const vp of visionPages) {
+    if (vp.particles) initVisionFlowField(vp);
+  }
+
+  // Reposition and redraw cards for the current page
+  const resizeCards = cardsByPage[currentPage];
+  if (resizeCards) {
+    resizeCards.forEach((c, i) => {
+      if (c.el.style.display !== "none") {
+        placeCard(c, i);
+        if (!c.isLive) c.drawFn(c.cx, c.w, c.h);
+      }
+    });
+  }
 }
 
 let resizeTimer = 0;
@@ -89,6 +117,127 @@ stage.addEventListener("pointermove", e => {
   pointer.y = (e.clientY - b.top)  / b.height;
 });
 stage.addEventListener("pointerleave", () => { pointer.x = 0.5; pointer.y = 0.5; });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CARD SYSTEM — draggable data panels overlaid on the stage
+// ─────────────────────────────────────────────────────────────────────────────
+const cardLayer = document.getElementById("card-layer");
+
+// ── Drag ──────────────────────────────────────────────────────────────────────
+cardLayer.addEventListener("pointerdown", e => {
+  const hdr = e.target.closest(".card-hdr");
+  if (!hdr) return;
+  const el = hdr.closest(".card");
+  if (!el) return;
+  e.preventDefault();
+  const r = el.getBoundingClientRect();
+  cardDrag = { el, ox: e.clientX - r.left, oy: e.clientY - r.top };
+  el.style.zIndex = ++cardZTop;
+  cardLayer.setPointerCapture(e.pointerId);
+});
+
+cardLayer.addEventListener("pointermove", e => {
+  if (!cardDrag) return;
+  const sr = stage.getBoundingClientRect();
+  const el = cardDrag.el;
+  let x = e.clientX - sr.left - cardDrag.ox;
+  let y = e.clientY - sr.top  - cardDrag.oy;
+  x = Math.max(0, Math.min(W - el.offsetWidth,  x));
+  y = Math.max(0, Math.min(H - el.offsetHeight, y));
+  el.style.left = x + "px";
+  el.style.top  = y + "px";
+  cardPositions[el.dataset.key] = { x, y };
+});
+
+cardLayer.addEventListener("pointerup",     () => { cardDrag = null; });
+cardLayer.addEventListener("pointercancel", () => { cardDrag = null; });
+
+// ── Build utility ─────────────────────────────────────────────────────────────
+// Creates a card DOM element with a 2× canvas inside, appends to cardLayer.
+// drawFn(cx, w, h) renders content onto the card's canvas.
+// isLive = true → drawFn is called every frame from drawLiveCards().
+function buildCard(pageIdx, id, title, w, h, drawFn, isLive) {
+  const key = `${pageIdx}:${id}`;
+  const el  = document.createElement("div");
+  el.className   = "card";
+  el.dataset.key = key;
+  el.style.display = "none";
+  el.style.zIndex  = cardZTop;
+
+  const hdr = document.createElement("div");
+  hdr.className = "card-hdr";
+  hdr.textContent = title;
+  el.appendChild(hdr);
+
+  const body = document.createElement("div");
+  body.className = "card-body";
+  el.appendChild(body);
+
+  const cvs = document.createElement("canvas");
+  cvs.width  = w * 2;
+  cvs.height = h * 2;
+  cvs.style.cssText = `width:${w}px;height:${h}px;display:block`;
+  body.appendChild(cvs);
+
+  const cx = cvs.getContext("2d");
+  cx.scale(2, 2);
+
+  cardLayer.appendChild(el);
+  return { el, cvs, cx, w, h, key, drawFn, isLive: !!isLive };
+}
+
+// Position a card using saved coords or a default staggered layout
+function placeCard(card, idx) {
+  let x, y;
+  const saved = cardPositions[card.key];
+  if (saved) {
+    x = saved.x;
+    y = saved.y;
+  } else {
+    const gap = 12;
+    const cw  = card.w + 24;   // card + body padding
+    const ch  = card.h + 30;   // card + header + body padding
+    x = W - cw - gap;
+    y = gap + idx * (ch + gap);
+  }
+  x = Math.max(0, Math.min(W - card.w - 24, x));
+  y = Math.max(0, Math.min(H - card.h - 30, y));
+  card.el.style.left = x + "px";
+  card.el.style.top  = y + "px";
+}
+
+// Show cards for page p; hide all others; draw static content
+function showCardsForPage(p) {
+  Object.values(cardsByPage).forEach(arr => arr.forEach(c => (c.el.style.display = "none")));
+  const cards = cardsByPage[p] || [];
+  cards.forEach((c, i) => {
+    placeCard(c, i);
+    c.el.style.display = "";
+    if (!c.isLive) c.drawFn(c.cx, c.w, c.h);
+  });
+}
+
+// Draw all live (per-frame) cards for the current page
+function drawLiveCards() {
+  const cards = cardsByPage[currentPage];
+  if (!cards) return;
+  for (const c of cards) {
+    if (c.isLive && c.el.style.display !== "none") {
+      c.cx.clearRect(0, 0, c.w, c.h);
+      c.drawFn(c.cx, c.w, c.h);
+    }
+  }
+}
+
+// Lazy build: create cards for page p the first time it is visited
+function ensureCards(p) {
+  if (cardsByPage[p]) return;
+  if      (p === 0) buildMapCards();
+  else if (p === 1) buildFormsCards();
+  else if (p === 2) buildFluxCards();
+  else if (p === 3) buildStrataCards();
+  else if (p >= 4)  buildVisionCards(p);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PAGE 0 — Stochasticity (Cartographic Map)
@@ -523,6 +672,85 @@ function drawMap(t) {
   }
 }
 
+// ─── Map cards ────────────────────────────────────────────────────────────────
+function buildMapCards() {
+  const cards = [];
+
+  // 1. Palette — map theme colour swatches
+  cards.push(buildCard(0, "palette", "palette", 134, 50, (cx, w, h) => {
+    if (!mapData) return;
+    const th   = MAP_THEMES[mapData.themeIdx];
+    const cols = [th.land, th.water, `rgb(${th.cRgb})`, th.roadA, `rgb(${th.uRgb})`];
+    const lbs  = ["land","sea","topo","road","urb"];
+    const sw   = Math.floor((w - 6) / 5);
+    cx.clearRect(0, 0, w, h);
+    cols.forEach((c, i) => {
+      cx.fillStyle = c;
+      cx.fillRect(3 + i * sw + 1, 3, sw - 2, h - 14);
+      cx.fillStyle = "rgba(31,45,56,0.36)";
+      cx.font = "6.5px 'Courier New',monospace";
+      cx.textAlign = "center";
+      cx.fillText(lbs[i], 3 + i * sw + 1 + (sw - 2) / 2, h - 3);
+    });
+  }));
+
+  // 2. Terrain — mini map thumbnail
+  cards.push(buildCard(0, "terrain", "terrain", 134, 74, (cx, w, h) => {
+    if (!mapData) return;
+    const th = MAP_THEMES[mapData.themeIdx];
+    const m  = mapData;
+    cx.clearRect(0, 0, w, h);
+    cx.fillStyle = th.land; cx.fillRect(0, 0, w, h);
+    // water
+    cx.fillStyle = th.water;
+    cx.beginPath();
+    cx.moveTo(0, m.coastLeftY * h);
+    cx.bezierCurveTo(m.cCP1x * w, m.cCP1y * h, m.cCP2x * w, m.cCP2y * h, m.coastBtmX * w, h + 2);
+    cx.lineTo(0, h + 2); cx.closePath(); cx.fill();
+    // contour rings (simplified)
+    cx.strokeStyle = `rgb(${th.cRgb})`; cx.lineWidth = 0.8;
+    for (let i = 3; i >= 0; i--) {
+      const f = (i + 1) / 4;
+      cx.globalAlpha = 0.28 + (3 - i) * 0.18;
+      cx.beginPath();
+      cx.ellipse(m.hillX * w, m.hillY * h, m.hillRX * w * f, m.hillRY * h * f, m.hillAngle, 0, Math.PI * 2);
+      cx.stroke();
+    }
+    cx.globalAlpha = 1;
+    // urban patch
+    cx.fillStyle = `rgba(${th.uRgb},0.48)`;
+    cx.fillRect(m.urbanX * w - 5, m.urbanY * h - 4, 11, 8);
+    // river
+    cx.strokeStyle = th.water; cx.lineWidth = 1.2; cx.lineCap = "round";
+    cx.beginPath();
+    cx.moveTo(m.rivSX * w, m.rivSY * h);
+    cx.quadraticCurveTo(m.rivCPX * w, m.rivCPY * h, m.rivEX * w, m.rivEY * h);
+    cx.stroke();
+  }));
+
+  // 3. Variables — contours, roads, theme as bars
+  cards.push(buildCard(0, "variables", "variables", 134, 56, (cx, w, h) => {
+    if (!mapData) return;
+    cx.clearRect(0, 0, w, h);
+    const rows = [
+      { label: "contours", v: mapData.contourRings, max: 24 },
+      { label: "roads   ", v: mapData.roads.length, max: 5  },
+      { label: "theme   ", v: mapData.themeIdx + 1, max: 4  },
+    ];
+    cx.font = "7.5px 'Courier New',monospace";
+    rows.forEach(({ label, v, max }, i) => {
+      const y = 14 + i * 15;
+      cx.fillStyle = "rgba(31,45,56,0.42)"; cx.textAlign = "left";
+      cx.fillText(label, 0, y);
+      const bx = 62, bw = w - bx - 2, bh = 6;
+      cx.fillStyle = "rgba(239,138,74,0.14)"; cx.fillRect(bx, y - bh, bw, bh);
+      cx.fillStyle = "rgba(239,138,74,0.70)"; cx.fillRect(bx, y - bh, bw * Math.min(1, v / max), bh);
+    });
+  }));
+
+  cardsByPage[0] = cards;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PAGE 1 — Panorama (Geometric Forms)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -729,6 +957,60 @@ function drawForms(t) {
   }
 }
 
+// ─── Forms cards ──────────────────────────────────────────────────────────────
+function buildFormsCards() {
+  const cards = [];
+
+  // 1. Palette — hue swatches + background sample
+  cards.push(buildCard(1, "palette", "palette", 134, 38, (cx, w, h) => {
+    const pal = PALETTES[formPalIdx];
+    cx.clearRect(0, 0, w, h);
+    const n  = pal.hues.length + 1;
+    const sw = Math.floor((w - 4) / n);
+    cx.fillStyle = pal.bg0; cx.fillRect(2, 2, sw - 1, h - 4);
+    pal.hues.forEach((hue, i) => {
+      cx.fillStyle = `hsl(${hue},${pal.sat}%,${pal.lit}%)`;
+      cx.fillRect(2 + (i + 1) * sw + 1, 2, sw - 2, h - 4);
+    });
+  }));
+
+  // 2. Energy — live spring velocity bars
+  cards.push(buildCard(1, "energy", "energy", 134, 56, (cx, w, h) => {
+    cx.clearRect(0, 0, w, h);
+    if (!formShapes.length) return;
+    const pal  = PALETTES[formPalIdx];
+    const n    = Math.min(formShapes.length, Math.floor((w - 4) / 2.2));
+    const bw   = (w - 4) / n;
+    for (let i = 0; i < n; i++) {
+      const s  = formShapes[Math.floor(i / n * formShapes.length)];
+      const e  = Math.min(1, Math.sqrt(s.velX * s.velX + s.velY * s.velY) * 85);
+      const bh = Math.max(1, e * (h - 6));
+      cx.fillStyle = `hsla(${s.hue},${pal.sat}%,${pal.lit}%,0.84)`;
+      cx.fillRect(2 + i * bw, h - 3 - bh, bw - 0.5, bh);
+    }
+  }, true));  // isLive
+
+  // 3. Variables — shape count + palette index
+  cards.push(buildCard(1, "variables", "variables", 134, 42, (cx, w, h) => {
+    cx.clearRect(0, 0, w, h);
+    const rows = [
+      { label: "shapes  ", v: formShapes.length, max: 42 },
+      { label: "palette ", v: formPalIdx + 1,     max: 4  },
+    ];
+    cx.font = "7.5px 'Courier New',monospace";
+    rows.forEach(({ label, v, max }, i) => {
+      const y = 14 + i * 15;
+      cx.fillStyle = "rgba(31,45,56,0.42)"; cx.textAlign = "left";
+      cx.fillText(label, 0, y);
+      const bx = 62, bw = w - bx - 2, bh = 6;
+      cx.fillStyle = "rgba(239,138,74,0.14)"; cx.fillRect(bx, y - bh, bw, bh);
+      cx.fillStyle = "rgba(239,138,74,0.70)"; cx.fillRect(bx, y - bh, bw * Math.min(1, v / max), bh);
+    });
+  }));
+
+  cardsByPage[1] = cards;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PAGE 2 — Flux (Particle burst from sphere)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -908,6 +1190,82 @@ function drawFlux(t) {
     const tilt  = Math.round((mx - 0.5) * 200);
     coordDisplay.textContent = `force  ${force}%\ntilt   ${tilt > 0 ? '+' : ''}${tilt}°`;
   }
+}
+
+// ─── Flux cards ───────────────────────────────────────────────────────────────
+function buildFluxCards() {
+  const cards = [];
+
+  // 1. Palette — particle hue + sphere hue gradient swatch
+  cards.push(buildCard(2, "palette", "palette", 134, 38, (cx, w, h) => {
+    if (!fluxData) return;
+    cx.clearRect(0, 0, w, h);
+    const { hueBase, sphereHue } = fluxData;
+    const grad = cx.createLinearGradient(2, 0, w - 2, 0);
+    grad.addColorStop(0,    `hsl(${hueBase},70%,58%)`);
+    grad.addColorStop(0.46, `hsl(${hueBase},70%,58%)`);
+    grad.addColorStop(0.54, `hsl(${sphereHue},62%,36%)`);
+    grad.addColorStop(1,    `hsl(${sphereHue},62%,36%)`);
+    cx.fillStyle = grad; cx.fillRect(2, 2, w - 4, h - 4);
+    // divider
+    cx.fillStyle = "rgba(255,255,255,0.35)"; cx.fillRect(w / 2 - 0.5, 4, 1, h - 8);
+    cx.fillStyle = "rgba(255,255,255,0.60)";
+    cx.font = "6.5px 'Courier New',monospace";
+    cx.textAlign = "left";  cx.fillText("burst",  4, h - 5);
+    cx.textAlign = "right"; cx.fillText("sphere", w - 4, h - 5);
+  }));
+
+  // 2. Activity — live mini burst arc with intensity
+  cards.push(buildCard(2, "activity", "activity", 134, 60, (cx, w, h) => {
+    cx.clearRect(0, 0, w, h);
+    if (!fluxData) return;
+    const intensity = 0.22 + (1 - smooth.y) * 1.05;
+    const normI     = Math.min(1, (intensity - 0.22) / 1.05);
+    const { hueBase, sphereHue } = fluxData;
+    const cr = Math.min(w, h) * 0.36, cx2 = w / 2, cy2 = h * 0.74;
+    // sphere arc
+    cx.strokeStyle = `hsl(${sphereHue},55%,36%)`; cx.lineWidth = 2.5;
+    cx.beginPath(); cx.arc(cx2, cy2, cr, Math.PI, 0); cx.stroke();
+    // burst lines
+    const n = 9;
+    for (let i = 0; i < n; i++) {
+      const ang = Math.PI * (0.12 + (i / (n - 1)) * 0.76);
+      const x0  = cx2 + Math.cos(ang) * cr;
+      const y0  = cy2 - Math.sin(ang) * cr;
+      const len = normI * cr * 0.92;
+      cx.strokeStyle = `hsla(${hueBase},68%,60%,${0.38 + normI * 0.54})`;
+      cx.lineWidth   = 0.7 + normI * 1.2;
+      cx.beginPath();
+      cx.moveTo(x0, y0);
+      cx.lineTo(x0 + Math.cos(ang) * len, y0 - Math.sin(ang) * len);
+      cx.stroke();
+    }
+    cx.fillStyle = "rgba(31,45,56,0.36)";
+    cx.font = "7px 'Courier New',monospace"; cx.textAlign = "right";
+    cx.fillText(`${Math.round(normI * 100)}%`, w - 2, h - 3);
+  }, true));  // isLive
+
+  // 3. Variables — particle + star count bars
+  cards.push(buildCard(2, "variables", "variables", 134, 42, (cx, w, h) => {
+    if (!fluxData) return;
+    cx.clearRect(0, 0, w, h);
+    const { hueBase } = fluxData;
+    const rows = [
+      { label: "particles", v: fluxParticles.length, max: 84  },
+      { label: "stars    ", v: fluxStars.length,     max: 150 },
+    ];
+    cx.font = "7.5px 'Courier New',monospace";
+    rows.forEach(({ label, v, max }, i) => {
+      const y = 14 + i * 15;
+      cx.fillStyle = "rgba(31,45,56,0.42)"; cx.textAlign = "left";
+      cx.fillText(label, 0, y);
+      const bx = 62, bw = w - bx - 2, bh = 6;
+      cx.fillStyle = `hsla(${hueBase},25%,22%,0.22)`;    cx.fillRect(bx, y - bh, bw, bh);
+      cx.fillStyle = `hsla(${hueBase},68%,60%,0.74)`;    cx.fillRect(bx, y - bh, bw * Math.min(1, v / max), bh);
+    });
+  }));
+
+  cardsByPage[2] = cards;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1097,6 +1455,78 @@ function drawStrata(t) {
   }
 }
 
+// ─── Strata cards ─────────────────────────────────────────────────────────────
+function buildStrataCards() {
+  const cards = [];
+
+  // 1. Palette — layer colour bands
+  cards.push(buildCard(3, "palette", "palette", 134, 44, (cx, w, h) => {
+    if (!strataData) return;
+    cx.clearRect(0, 0, w, h);
+    const th = STRATA_THEMES[strataData.themeIdx];
+    const n  = th.layers.length;
+    const sw = (w - 4) / n;
+    th.layers.forEach((c, i) => {
+      cx.fillStyle = c;
+      cx.fillRect(2 + i * sw, 2, sw - 0.5, h - 4);
+    });
+  }));
+
+  // 2. Waves — live mini waveform of all layers
+  cards.push(buildCard(3, "waves", "waves", 134, 72, (cx, w, h) => {
+    cx.clearRect(0, 0, w, h);
+    if (!strataData) return;
+    const { themeIdx, stLayers, freq } = strataData;
+    const th = STRATA_THEMES[themeIdx];
+    cx.fillStyle = th.bg; cx.fillRect(0, 0, w, h);
+    const t2        = performance.now();
+    const ampScale  = 0.10 + (1 - smooth.y) * 1.70;
+    const phaseBias = (smooth.x - 0.5) * Math.PI * 3.2;
+    stLayers.forEach((lyr, li) => {
+      const cIdx  = Math.round(li / Math.max(1, stLayers.length - 1) * (th.layers.length - 1));
+      const color = th.layers[cIdx];
+      const baseY = lyr.baseYFrac * h;
+      const amp   = lyr.ampFrac * h * ampScale;
+      const phase = lyr.phaseOff + t2 * lyr.animSpeed + phaseBias * lyr.parallax;
+      const seg   = 20;
+      cx.fillStyle = color;
+      cx.beginPath(); cx.moveTo(-2, h + 2);
+      for (let s = 0; s <= seg; s++) {
+        const nx = s / seg;
+        const y  = baseY - amp * Math.sin(nx * freq * lyr.freqMult * Math.PI * 2 + phase);
+        s === 0 ? cx.lineTo(nx * w, y) : cx.lineTo(nx * w, y);
+      }
+      cx.lineTo(w + 2, h + 2); cx.closePath(); cx.fill();
+    });
+  }, true));  // isLive
+
+  // 3. Variables — layers, frequency, bar count
+  cards.push(buildCard(3, "variables", "variables", 134, 56, (cx, w, h) => {
+    if (!strataData) return;
+    cx.clearRect(0, 0, w, h);
+    const th   = STRATA_THEMES[strataData.themeIdx];
+    const dark = th.bg === "#07111e";
+    const barC = dark ? "rgba(90,180,216,0.72)"  : "rgba(239,138,74,0.70)";
+    const bgC  = dark ? "rgba(90,180,216,0.14)"  : "rgba(239,138,74,0.14)";
+    const rows = [
+      { label: "layers  ", v: strataData.layerCount,             max: 9  },
+      { label: "freq    ", v: (strataData.freq - 2.2) / 3.2,     max: 1  },
+      { label: "bars    ", v: strataData.stBars.length / 22,     max: 1  },
+    ];
+    cx.font = "7.5px 'Courier New',monospace";
+    rows.forEach(({ label, v, max }, i) => {
+      const y = 14 + i * 15;
+      cx.fillStyle = dark ? "rgba(156,216,242,0.50)" : "rgba(31,45,56,0.42)";
+      cx.textAlign = "left"; cx.fillText(label, 0, y);
+      const bx = 62, bw = w - bx - 2, bh = 6;
+      cx.fillStyle = bgC;  cx.fillRect(bx, y - bh, bw, bh);
+      cx.fillStyle = barC; cx.fillRect(bx, y - bh, bw * Math.min(1, v / max), bh);
+    });
+  }));
+
+  cardsByPage[3] = cards;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PAGE 4+ — Vision  (uploaded image → dynamic canvas interpretation)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1260,12 +1690,96 @@ function generateVisionName(analysis, seed) {
   return pool[Math.floor(rng() * pool.length)];
 }
 
+// ── Vision flow field init ────────────────────────────────────────────────────
+function initVisionFlowField(vp) {
+  const { complexity } = vp.analysis;
+  const count = Math.floor(200 + complexity * 580);  // 200–780 particles
+  vp.particles = Array.from({ length: count }, () => ({
+    x:        Math.random() * W,
+    y:        Math.random() * H,
+    angle:    Math.random() * Math.PI * 2,
+    speed:    0.20 + Math.random() * 1.5,
+    size:     0.4  + Math.random() * 2.4,
+    alpha:    0.08 + Math.random() * 0.38,
+    colorIdx: Math.floor(Math.random() * 5),
+  }));
+  vp.firstFrame = true;
+}
+
+// ── Vision cards ──────────────────────────────────────────────────────────────
+function buildVisionCards(p) {
+  const vp = visionPages[p - 4];
+  if (!vp) return;
+  const { brightness, palette, avgBright, warmScore, complexity, GW, GH } = vp.analysis;
+  const cards = [];
+
+  // 1. Image palette — 5 tone bands
+  cards.push(buildCard(p, "palette", "palette", 134, 52, (cx, w, h) => {
+    cx.clearRect(0, 0, w, h);
+    const lbs = ["shadow","dark","mid","light","hi"];
+    const sw  = Math.floor((w - 6) / 5);
+    palette.forEach((c, i) => {
+      cx.fillStyle = c;
+      cx.fillRect(3 + i * sw + 1, 3, sw - 2, h - 14);
+      cx.fillStyle = "rgba(31,45,56,0.32)";
+      cx.font = "6.5px 'Courier New',monospace"; cx.textAlign = "center";
+      cx.fillText(lbs[i], 3 + i * sw + 1 + (sw - 2) / 2, h - 3);
+    });
+  }));
+
+  // 2. Luminance histogram — brightness distribution
+  cards.push(buildCard(p, "luminance", "luminance", 134, 58, (cx, w, h) => {
+    cx.clearRect(0, 0, w, h);
+    const buckets = 16, total = GW * GH;
+    const hist = new Float32Array(buckets);
+    for (let k = 0; k < total; k++) {
+      hist[Math.min(buckets - 1, Math.floor(brightness[k] * buckets))]++;
+    }
+    const peak = Math.max(...hist);
+    const bw   = (w - 4) / buckets;
+    for (let i = 0; i < buckets; i++) {
+      const t2 = i / buckets;
+      const bh = ((hist[i] / peak) || 0) * (h - 6);
+      cx.fillStyle = `hsl(0,0%,${Math.round(14 + t2 * 76)}%)`;
+      cx.fillRect(2 + i * bw + 0.5, h - 3 - bh, bw - 1, bh);
+    }
+  }));
+
+  // 3. Character — warm/cool, brightness, complexity gauges
+  cards.push(buildCard(p, "character", "character", 134, 72, (cx, w, h) => {
+    cx.clearRect(0, 0, w, h);
+    const [r0, g0, b0] = parseRgb(palette[0]);
+    const [r4, g4, b4] = parseRgb(palette[4]);
+    const gauges = [
+      { label: "warm ↔ cool",    v: Math.max(0, Math.min(1, (warmScore  + 0.25) / 0.50)) },
+      { label: "dark ↔ bright",  v: Math.max(0, Math.min(1, avgBright)) },
+      { label: "calm ↔ complex", v: Math.max(0, Math.min(1, complexity / 0.38)) },
+    ];
+    cx.font = "7px 'Courier New',monospace";
+    gauges.forEach(({ label, v }, i) => {
+      const y = 14 + i * 20;
+      cx.fillStyle = "rgba(31,45,56,0.44)"; cx.textAlign = "left";
+      cx.fillText(label, 0, y);
+      const bx = 0, bw = w - 2, by = y + 2, bh = 5;
+      cx.fillStyle = "rgba(31,45,56,0.10)"; cx.fillRect(bx, by, bw, bh);
+      const grad = cx.createLinearGradient(bx, 0, bx + bw, 0);
+      grad.addColorStop(0, `rgba(${r0},${g0},${b0},0.78)`);
+      grad.addColorStop(1, `rgba(${r4},${g4},${b4},0.78)`);
+      cx.fillStyle = grad; cx.fillRect(bx, by, bw * v, bh);
+      cx.fillStyle = "rgba(239,138,74,0.92)";
+      cx.beginPath(); cx.arc(bx + bw * v, by + bh / 2, 2.8, 0, Math.PI * 2); cx.fill();
+    });
+  }));
+
+  cardsByPage[p] = cards;
+}
+
 // ── Add a new vision page from an analyzed image ──────────────────────────────
 function addVisionPage(analysis) {
   const seed    = Math.random();
   const name    = generateVisionName(analysis, seed);
   const pageIdx = 4 + visionPages.length;
-  visionPages.push({ seed, name, analysis });
+  visionPages.push({ seed, name, analysis, particles: null, firstFrame: true });
 
   // Insert at top of vision list (most recent first, directly under upload zone)
   const visionList = document.getElementById("nav-vision-list");
@@ -1276,132 +1790,84 @@ function addVisionPage(analysis) {
     <button class="refresh-btn" data-page="${pageIdx}" aria-label="Refresh ${name}">↻</button>`;
   visionList.prepend(li);
 
+  buildVisionCards(pageIdx);
   navigateTo(pageIdx);
 }
 
-// ── Draw a vision page — ridge-line survey chart ──────────────────────────────
-// Each row of the analysis grid maps to a stacked waveform baseline.
-// Drawing top→bottom: each row first masks the area above its baseline
-// (cutting off overflow from the row above), then draws its own fill and stroke.
-// Fills go UPWARD from baseline — amplitude driven by mouse Y.
-// Mouse X applies parallax (top rows shift more than bottom rows).
+// ── Draw Vision — particle flow field driven by image analysis ─────────────────
 function drawVision(t) {
   const vp = visionPages[currentPage - 4];
   if (!vp) return;
+  if (!vp.particles) initVisionFlowField(vp);
 
-  const { analysis, seed } = vp;
-  const { brightness, rowColors, palette, GW, GH } = analysis;
-  const rng = makeRng(seed);
-  const mx  = smooth.x, my = smooth.y;
+  const { analysis } = vp;
+  const { brightness, palette, complexity, GW, GH } = analysis;
+  const mx = smooth.x, my = smooth.y;
 
-  // ── Background
-  ctx.fillStyle = palette[4];
-  ctx.fillRect(0, 0, W, H);
+  // Background — dark version of image's darkest palette band
+  const [br, bg, bb] = parseRgb(palette[0]);
+  const [bh, bs, bl] = rgbToHsl(br, bg, bb);
+  const [dbR, dbG, dbB] = hslToRgb(bh, Math.min(1, bs * 0.65), Math.max(0.03, bl * 0.22));
 
-  const gridCols = 7 + Math.floor(rng() * 3);
-
-  // Baselines: use all GH rows spread across the full canvas
-  const padT    = H * 0.06;
-  const padB    = H * 0.04;
-  const nRows   = GH;
-  const spacing = (H - padT - padB) / (nRows - 1);
-
-  // Amplitude: mouse Y from nearly flat (bottom) to dramatically tall (top)
-  const maxAmp = spacing * 3.8;
-  const amp    = (0.18 + my * 0.82) * maxAmp;
-
-  // Draw TOP → BOTTOM so each later row paints on top of the previous one.
-  // Before drawing each row, mask the zone between the previous baseline and
-  // this one with background colour — cleanly cutting off any overflowing peaks.
-  for (let i = 0; i < nRows; i++) {
-    const r      = i;
-    const baseY  = padT + i * spacing;
-    const color  = rowColors[r];
-
-    // Parallax: top rows (i=0) shift most, bottom rows least
-    const pMult  = 0.2 + 0.8 * (1 - i / nRows);
-    const shift  = (mx - 0.5) * W * 0.068 * pMult;
-
-    // Mask the strip above this baseline — erases overflow from the row above
-    if (i > 0) {
-      const prevBaseY = padT + (i - 1) * spacing;
-      ctx.fillStyle = palette[4];
-      ctx.fillRect(0, prevBaseY - amp - 4, W, amp + 4);
-    }
-
-    // Build smooth profile points
-    const pts = [];
-    for (let c = 0; c < GW; c++) {
-      pts.push({
-        x: (c / (GW - 1)) * W + shift,
-        y: baseY - brightness[r * GW + c] * amp,
-      });
-    }
-
-    // Filled silhouette (upward from baseline)
-    ctx.globalAlpha = 0.88;
-    ctx.fillStyle   = color;
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, baseY);
-    ctx.lineTo(pts[0].x, pts[0].y);
-    for (let c = 1; c < pts.length - 1; c++) {
-      const cmx = (pts[c].x + pts[c + 1].x) * 0.5;
-      const cmy = (pts[c].y + pts[c + 1].y) * 0.5;
-      ctx.quadraticCurveTo(pts[c].x, pts[c].y, cmx, cmy);
-    }
-    ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-    ctx.lineTo(pts[pts.length - 1].x, baseY);
-    ctx.closePath();
-    ctx.fill();
-
-    // Profile stroke
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = color;
-    ctx.lineWidth   = 1.4;
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let c = 1; c < pts.length - 1; c++) {
-      const cmx = (pts[c].x + pts[c + 1].x) * 0.5;
-      const cmy = (pts[c].y + pts[c + 1].y) * 0.5;
-      ctx.quadraticCurveTo(pts[c].x, pts[c].y, cmx, cmy);
-    }
-    ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-    ctx.stroke();
-
-    // Baseline rule
-    ctx.strokeStyle = "rgba(0,0,0,0.06)";
-    ctx.lineWidth   = 0.5;
-    ctx.beginPath();
-    ctx.moveTo(0, baseY);
-    ctx.lineTo(W, baseY);
-    ctx.stroke();
-
-    // Data dots at bright peaks
-    ctx.fillStyle = "rgba(0,0,0,0.18)";
-    for (let c = 0; c < GW; c++) {
-      if (brightness[r * GW + c] > 0.72) {
-        ctx.beginPath();
-        ctx.arc(pts[c].x, pts[c].y, 1.8, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
+  if (vp.firstFrame) {
+    ctx.fillStyle = `rgb(${dbR},${dbG},${dbB})`;
+    ctx.fillRect(0, 0, W, H);
+    vp.firstFrame = false;
+  } else {
+    // Slow fade — builds up long particle trails
+    ctx.fillStyle = `rgba(${dbR},${dbG},${dbB},0.052)`;
+    ctx.fillRect(0, 0, W, H);
   }
 
-  ctx.globalAlpha = 1;
+  // Flow field turbulence driven by image complexity
+  const turb     = 1.5 + complexity * 4.8;
+  const spdScale = 0.45 + my * 1.35;   // mouse Y controls particle speed
 
-  // Vertical guide lines (graticule)
-  const gridShift = (mx - 0.5) * 14;
-  ctx.strokeStyle = "rgba(0,0,0,0.04)";
-  ctx.lineWidth   = 0.5;
-  for (let i = 0; i <= gridCols; i++) {
-    const x = i * W / gridCols + gridShift;
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  for (const p of vp.particles) {
+    const nx = p.x / W;
+    const ny = p.y / H;
+
+    // Sample image brightness at particle position to warp the flow field
+    const gx    = Math.min(GW - 1, Math.floor(nx * GW));
+    const gy    = Math.min(GH - 1, Math.floor(ny * GH));
+    const bright = brightness[gy * GW + gx] || 0.5;
+
+    // Trig flow field + brightness warp
+    const targetA =
+        Math.sin(nx * 4.1 + t * 0.00024 * turb) * turb
+      + Math.cos(ny * 3.2 + t * 0.00018 * turb) * turb
+      + Math.sin((nx * 2.3 + ny * 1.9) + t * 0.00013) * turb * 0.55
+      + bright * Math.PI * 1.5;
+
+    // Smooth angle update
+    p.angle += (targetA - p.angle) * 0.042;
+
+    // Mouse attraction — particles near cursor drift toward it
+    const mdx = mx - nx, mdy = (my - ny) * (H / W);
+    const md  = Math.sqrt(mdx * mdx + mdy * mdy);
+    if (md < 0.26 && md > 0.002) {
+      p.angle += Math.atan2(mdy, mdx) * (1 - md / 0.26) * 0.20;
+    }
+
+    p.x += Math.cos(p.angle) * p.speed * spdScale;
+    p.y += Math.sin(p.angle) * p.speed * spdScale;
+
+    // Wrap edges seamlessly
+    if (p.x < -4) p.x = W + 4;
+    if (p.x > W + 4) p.x = -4;
+    if (p.y < -4) p.y = H + 4;
+    if (p.y > H + 4) p.y = -4;
+
+    // Draw particle using image's own palette
+    const [pr, pg, pb] = parseRgb(palette[p.colorIdx]);
+    ctx.fillStyle = `rgba(${pr},${pg},${pb},${p.alpha})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   if (coordDisplay) {
-    const density = Math.round(analysis.avgBright * 100);
-    const ampPct  = Math.round(my * 100);
-    coordDisplay.textContent = `density  ${density}%\namp    ${ampPct}%`;
+    coordDisplay.textContent = `turbulence  ${Math.round(complexity * 100)}%\nflow      ${Math.round(my * 100)}%`;
   }
 }
 
@@ -1445,6 +1911,8 @@ function tick(t) {
   else if (currentPage === 3) drawStrata(t);
   else if (currentPage >= 4)  drawVision(t);
 
+  drawLiveCards();
+
   requestAnimationFrame(tick);
 }
 
@@ -1481,11 +1949,16 @@ function refreshPage(p) {
     else if (p === 1) initForms();
     else if (p === 2) initFlux();
     else              initStrata();
+    // Redraw static card content with new data
+    const cards = cardsByPage[p];
+    if (cards) cards.forEach(c => { if (!c.isLive) c.drawFn(c.cx, c.w, c.h); });
   } else {
     const vp = visionPages[p - 4];
     if (!vp) return;
     vp.seed = Math.random();
     vp.name = generateVisionName(vp.analysis, vp.seed);
+    // Reset particle field for a fresh start
+    initVisionFlowField(vp);
     const btn = document.querySelector(`.nav-link[data-page="${p}"]`);
     if (btn) btn.textContent = vp.name;
   }
@@ -1500,6 +1973,14 @@ function navigateTo(p) {
     btn.classList.toggle("is-active", active);
     btn.setAttribute("aria-current", active ? "page" : "false");
   });
+  // Vision pages: reset trail so fresh particles on arrival
+  if (p >= 4) {
+    const vp = visionPages[p - 4];
+    if (vp) vp.firstFrame = true;
+  }
+  // Cards
+  ensureCards(p);
+  showCardsForPage(p);
 }
 
 // Event delegation on the whole nav — covers both static and dynamic vision items
@@ -1546,5 +2027,7 @@ backdrop.addEventListener("click", closeNav);
 // ─────────────────────────────────────────────────────────────────────────────
 // Init
 // ─────────────────────────────────────────────────────────────────────────────
-resize();       // sets W/H, calls initMap() + initForms() + initFlux() + initStrata()
+resize();           // sets W/H, calls initMap() + initForms() + initFlux() + initStrata()
+ensureCards(0);     // build cards for the initial page
+showCardsForPage(0);
 startLoop();

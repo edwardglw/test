@@ -335,3 +335,40 @@ body {
   color: var(--deep-teal);
   opacity: 0.7;
 }
+
+/* ─── Card layer ─── */
+.card-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.card {
+  position: absolute;
+  pointer-events: all;
+  background: rgba(244, 234, 215, 0.90);
+  border: 1px solid rgba(239, 138, 74, 0.28);
+  border-radius: 7px;
+  backdrop-filter: blur(10px);
+  touch-action: none;
+  will-change: left, top;
+}
+
+.card-hdr {
+  padding: 0.26rem 0.55rem 0.22rem;
+  font-size: 0.58rem;
+  letter-spacing: 0.17em;
+  text-transform: lowercase;
+  color: rgba(31, 45, 56, 0.40);
+  cursor: grab;
+  border-bottom: 1px solid rgba(239, 138, 74, 0.18);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.card-hdr:active { cursor: grabbing; }
+
+.card-body {
+  padding: 0.42rem 0.50rem 0.40rem;
+}
